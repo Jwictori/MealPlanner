@@ -1,0 +1,30 @@
+{
+  "name": "meal-planner",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AI-powered meal planning app",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "clean": "turbo run clean && rm -rf node_modules",
+    "db:push": "cd packages/backend && supabase db push",
+    "db:migrate": "cd packages/backend && supabase migration new",
+    "backend:dev": "cd packages/backend && npm run dev",
+    "web:dev": "cd packages/web && npm run dev",
+    "mobile:dev": "cd packages/mobile && npm start"
+  },
+  "devDependencies": {
+    "turbo": "^2.0.0",
+    "typescript": "^5.3.3",
+    "@types/node": "^20.10.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}
