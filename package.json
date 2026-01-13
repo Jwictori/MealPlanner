@@ -1,30 +1,35 @@
 {
-  "name": "meal-planner",
+  "name": "meal-planner-monorepo",
   "version": "1.0.0",
   "private": true,
-  "description": "AI-powered meal planning app",
   "workspaces": [
     "packages/*"
   ],
   "scripts": {
-    "dev": "turbo run dev",
-    "build": "turbo run build",
-    "test": "turbo run test",
-    "lint": "turbo run lint",
-    "clean": "turbo run clean && rm -rf node_modules",
-    "db:push": "cd packages/backend && supabase db push",
-    "db:migrate": "cd packages/backend && supabase migration new",
-    "backend:dev": "cd packages/backend && npm run dev",
-    "web:dev": "cd packages/web && npm run dev",
-    "mobile:dev": "cd packages/mobile && npm start"
+    "build:shared": "npm run build --workspace=@meal-planner/shared",
+    "build:backend": "npm run build --workspace=@meal-planner/backend",
+    "build:web": "npm run build --workspace=@meal-planner/web",
+    "build": "npm run build:shared && npm run build:backend && npm run build:web",
+    "dev:backend": "npm run dev --workspace=@meal-planner/backend",
+    "dev:web": "npm run dev --workspace=@meal-planner/web",
+    "dev:mobile": "npm run start --workspace=@meal-planner/mobile",
+    "mobile": "npm run start --workspace=@meal-planner/mobile",
+    "clean": "rimraf packages/*/node_modules packages/*/dist node_modules",
+    "install:all": "npm install"
   },
   "devDependencies": {
-    "turbo": "^2.0.0",
-    "typescript": "^5.3.3",
-    "@types/node": "^20.10.0"
+    "rimraf": "^5.0.5"
+  },
+  "overrides": {
+    "react": "19.1.0",
+    "react-dom": "19.1.0"
   },
   "engines": {
     "node": ">=18.0.0",
     "npm": ">=9.0.0"
+  },
+  "dependencies": {
+    "react": "19.1.0",
+    "react-dom": "19.1.0"
   }
 }

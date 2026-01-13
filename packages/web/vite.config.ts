@@ -8,7 +8,8 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
-      '@shared': path.resolve(__dirname, '../shared'),
+      '@shared': path.resolve(__dirname, '../shared/src'),
+      '@meal-planner/shared': path.resolve(__dirname, '../shared/src/index.ts'),
     },
   },
   server: {

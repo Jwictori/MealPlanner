@@ -1,10 +1,10 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { 
-  startOfMonth, 
-  endOfMonth, 
-  eachDayOfInterval, 
-  format, 
+import {
+  startOfMonth,
+  endOfMonth,
+  eachDayOfInterval,
+  format,
   isSameMonth,
   isSameDay,
   isToday,
@@ -16,6 +16,38 @@ import {
 } from 'date-fns'
 import { sv } from 'date-fns/locale'
 import type { MealPlan, Recipe } from '@shared/types'
+import {
+  DndContext,
+  DragOverlay,
+  useDraggable,
+  useDroppable,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  closestCenter,
+  type DragEndEvent,
+  type DragStartEvent
+} from '@dnd-kit/core'
+
+// Small thumbnail for month view
+function MiniThumbnail({ src, alt }: { src?: string; alt: string }) {
+  const [error, setError] = useState(false)
+
+  if (!src || error) {
+    return null // Don't show placeholder in month view to save space
+  }
+
+  return (
+    <img
+      src={src}
+      alt={alt}
+      className="w-5 h-5 min-w-[20px] rounded object-cover"
+      loading="lazy"
+      onError={() => setError(true)}
+    />
+  )
+}
 
 interface MonthCalendarViewProps {
   mealPlans: MealPlan[]
@@ -25,6 +57,105 @@ interface MonthCalendarViewProps {
   onAddMeal: (date: string) => void
   onViewMeal: (plan: MealPlan) => void
   onDeleteMeal: (planId: string) => void
+  onMoveMeal?: (planId: string, newDate: string) => void
+  onDuplicateMeal?: (planId: string, newDate: string) => void
+}
+
+// Draggable meal item component - optimized for smooth drag
+function DraggableMealItem({
+  plan,
+  recipe,
+  onViewMeal,
+  onDeleteMeal
+}: {
+  plan: MealPlan
+  recipe: Recipe
+  onViewMeal: (plan: MealPlan) => void
+  onDeleteMeal: (planId: string) => void
+}) {
+  const [imgError, setImgError] = useState(false)
+  const { attributes, listeners, setNodeRef, isDragging, transform } = useDraggable({
+    id: plan.id,
+    data: { plan, recipe }
+  })
+
+  // Apply transform directly for smoother dragging
+  const style = transform ? {
+    transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
+    zIndex: isDragging ? 1000 : undefined,
+    willChange: isDragging ? 'transform' : undefined
+  } : undefined
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`group/item relative flex-1 min-h-[28px] ${isDragging ? 'opacity-50' : ''}`}
+    >
+      <button
+        {...listeners}
+        {...attributes}
+        onClick={(e) => {
+          e.stopPropagation()
+          onViewMeal(plan)
+        }}
+        className="w-full h-full text-left px-2 py-1.5 bg-gradient-to-r from-primary to-secondary text-white rounded-lg text-xs font-medium hover:shadow-lg transition-shadow flex items-center gap-1.5 cursor-grab active:cursor-grabbing touch-none"
+      >
+        {recipe.image_url && !imgError ? (
+          <img
+            src={recipe.image_url}
+            alt={recipe.name}
+            className="w-5 h-5 min-w-[20px] rounded object-cover pointer-events-none"
+            loading="lazy"
+            onError={() => setImgError(true)}
+          />
+        ) : null}
+        <span className="truncate pointer-events-none">{recipe.name}</span>
+      </button>
+
+      {/* Quick delete button */}
+      {!isDragging && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            if (window.confirm(`Ta bort "${recipe.name}"?`)) {
+              onDeleteMeal(plan.id)
+            }
+          }}
+          className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full opacity-0 group-hover/item:opacity-100 transition-opacity hover:bg-red-600 shadow-md flex items-center justify-center leading-none"
+          style={{ fontSize: '14px', paddingBottom: '1px' }}
+        >
+          ×
+        </button>
+      )}
+    </div>
+  )
+}
+
+// Droppable day cell component
+function DroppableDay({
+  dateStr,
+  isOver,
+  children
+}: {
+  dateStr: string
+  isOver: boolean
+  children: React.ReactNode
+}) {
+  const { setNodeRef } = useDroppable({
+    id: dateStr
+  })
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`flex-1 flex flex-col min-h-0 overflow-visible transition-all ${
+        isOver ? 'bg-primary-light/50 ring-2 ring-primary ring-inset rounded-lg' : ''
+      }`}
+    >
+      {children}
+    </div>
+  )
 }
 
 export function MonthCalendarView({
@@ -34,10 +165,84 @@ export function MonthCalendarView({
   onDateChange,
   onAddMeal,
   onViewMeal,
-  onDeleteMeal
+  onDeleteMeal,
+  onMoveMeal,
+  onDuplicateMeal
 }: MonthCalendarViewProps) {
-  
+
   const [selectedMonth, setSelectedMonth] = useState(currentDate)
+  const [activeDragId, setActiveDragId] = useState<string | null>(null)
+  const [isAltPressed, setIsAltPressed] = useState(false)
+  const [overDateStr, setOverDateStr] = useState<string | null>(null)
+
+  // Track Alt key for duplicate mode
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if (e.altKey) setIsAltPressed(true)
+  }, [])
+
+  const handleKeyUp = useCallback((e: KeyboardEvent) => {
+    if (!e.altKey) setIsAltPressed(false)
+  }, [])
+
+  // Add/remove key listeners
+  useEffect(() => {
+    window.addEventListener('keydown', handleKeyDown)
+    window.addEventListener('keyup', handleKeyUp)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('keyup', handleKeyUp)
+    }
+  }, [handleKeyDown, handleKeyUp])
+
+  // Configure sensors for responsive drag
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 5 // Lower distance for quicker activation
+      }
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: 200, // Short delay for touch
+        tolerance: 5
+      }
+    })
+  )
+
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    setActiveDragId(event.active.id as string)
+  }, [])
+
+  const handleDragOver = useCallback((event: { over: { id: string } | null }) => {
+    setOverDateStr(event.over?.id as string | null)
+  }, [])
+
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event
+    setActiveDragId(null)
+    setOverDateStr(null)
+
+    if (!over) return
+
+    const planId = active.id as string
+    const targetDate = over.id as string
+
+    // Don't do anything if dropped on same date
+    const plan = mealPlans.find(p => p.id === planId)
+    if (!plan || plan.date === targetDate) return
+
+    if (isAltPressed && onDuplicateMeal) {
+      // Alt+drag = duplicate
+      onDuplicateMeal(planId, targetDate)
+    } else if (onMoveMeal) {
+      // Normal drag = move
+      onMoveMeal(planId, targetDate)
+    }
+  }, [mealPlans, isAltPressed, onMoveMeal, onDuplicateMeal])
+
+  // Get active drag item for overlay
+  const activeDragPlan = activeDragId ? mealPlans.find(p => p.id === activeDragId) : null
+  const activeDragRecipe = activeDragPlan ? recipes.find(r => r.id === activeDragPlan.recipe_id) : null
   
   // Get all days for the month grid (including padding days)
   const calendarDays = useMemo(() => {
@@ -116,136 +321,158 @@ export function MonthCalendarView({
         </div>
       </div>
       
-      {/* Calendar Grid */}
-      <div className="bg-white rounded-2xl shadow-lg overflow-hidden border-2 border-gray-200">
-        {/* Weekday headers */}
-        <div className="grid grid-cols-7 bg-gray-50 border-b-2 border-gray-200">
-          {weekDays.map(day => (
-            <div
-              key={day}
-              className="p-3 text-center font-semibold text-sm text-gray-700"
-            >
-              {day}
-            </div>
-          ))}
-        </div>
-        
-        {/* Days grid */}
-        <div className="grid grid-cols-7">
-          {calendarDays.map((day, index) => {
-            const dateStr = format(day, 'yyyy-MM-dd')
-            const plansForDay = plansByDate.get(dateStr) || []
-            const isCurrentMonth = isSameMonth(day, selectedMonth)
-            const isTodayDate = isToday(day)
-            const isSelected = isSameDay(day, currentDate)
-            
-            return (
-              <motion.div
-                key={dateStr}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: index * 0.01 }}
-                className={`group min-h-[120px] p-2 border-b border-r border-gray-200 transition-all relative ${
-                  !isCurrentMonth
-                    ? 'bg-gray-50'
-                    : isTodayDate
-                    ? 'bg-blue-50'
-                    : isSelected
-                    ? 'bg-primary-light'
-                    : 'bg-white hover:bg-gray-50'
-                } ${
-                  (index + 1) % 7 === 0 ? 'border-r-0' : ''
-                }`}
+      {/* Calendar Grid with Drag and Drop */}
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDragEnd={handleDragEnd}
+      >
+        <div className="bg-white rounded-2xl shadow-lg overflow-hidden border-2 border-gray-200">
+          {/* Weekday headers */}
+          <div className="grid grid-cols-7 bg-gray-50 border-b-2 border-gray-200">
+            {weekDays.map(day => (
+              <div
+                key={day}
+                className="p-3 text-center font-semibold text-sm text-gray-700"
               >
-                {/* Clickable area for date selection */}
-                <div 
-                  onClick={() => onDateChange(day)}
-                  className="cursor-pointer"
+                {day}
+              </div>
+            ))}
+          </div>
+
+          {/* Days grid */}
+          <div className="grid grid-cols-7">
+            {calendarDays.map((day, index) => {
+              const dateStr = format(day, 'yyyy-MM-dd')
+              const plansForDay = plansByDate.get(dateStr) || []
+              const isCurrentMonth = isSameMonth(day, selectedMonth)
+              const isTodayDate = isToday(day)
+              const isSelected = isSameDay(day, currentDate)
+              const isDropTarget = overDateStr === dateStr
+
+              return (
+                <div
+                  key={dateStr}
+                  className={`group h-[110px] p-2 border-b border-r border-gray-200 relative flex flex-col ${
+                    !isCurrentMonth
+                      ? 'bg-gray-50'
+                      : isTodayDate
+                      ? 'bg-blue-50'
+                      : isSelected
+                      ? 'bg-primary-light'
+                      : 'bg-white hover:bg-gray-50'
+                  } ${
+                    (index + 1) % 7 === 0 ? 'border-r-0' : ''
+                  }`}
                 >
-                  {/* Date number */}
-                  <div className="flex items-center justify-between mb-1">
-                    <span
-                      className={`text-sm font-semibold ${
-                        !isCurrentMonth
-                          ? 'text-gray-400'
-                          : isTodayDate
-                          ? 'text-primary'
-                          : 'text-gray-700'
-                      }`}
-                    >
-                      {format(day, 'd')}
-                    </span>
-                    
-                    {/* Week number on Mondays */}
-                    {day.getDay() === 1 && (
-                      <span className="text-xs text-gray-400">
-                        v{getWeek(day, { locale: sv })}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                
-                {/* Meal plans for this day */}
-                <div className="space-y-1 mb-1 flex-1">
-                  <AnimatePresence>
-                    {plansForDay.map(plan => {
-                      const recipe = getRecipeForPlan(plan)
-                      if (!recipe) return null
-                      
-                      return (
-                        <motion.div
-                          key={plan.id}
-                          initial={{ scale: 0.8, opacity: 0 }}
-                          animate={{ scale: 1, opacity: 1 }}
-                          exit={{ scale: 0.8, opacity: 0 }}
-                          className="group/item relative"
-                        >
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              onViewMeal(plan)
-                            }}
-                            className="w-full text-left px-2 py-1 bg-gradient-to-r from-primary to-secondary text-white rounded text-xs font-medium hover:shadow-md transition-all truncate"
-                          >
-                            {recipe.name}
-                          </button>
-                          
-                          {/* Quick delete button */}
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              if (window.confirm(`Ta bort "${recipe.name}"?`)) {
-                                onDeleteMeal(plan.id)
-                              }
-                            }}
-                            className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs opacity-0 group-hover/item:opacity-100 transition-all hover:bg-red-600 flex items-center justify-center z-10"
-                          >
-                            ×
-                          </button>
-                        </motion.div>
-                      )
-                    })}
-                  </AnimatePresence>
-                </div>
-                
-                {/* Add meal button - ONLY show when NO meals exist */}
-                {isCurrentMonth && plansForDay.length === 0 && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onAddMeal(dateStr)
-                    }}
-                    className="w-full flex-1 min-h-[60px] flex flex-col items-center justify-center gap-1 border-2 border-dashed border-gray-300 hover:border-primary rounded-lg text-gray-500 hover:text-primary transition-all hover:bg-primary-light"
+                  {/* Clickable area for date selection */}
+                  <div
+                    onClick={() => onDateChange(day)}
+                    className="cursor-pointer"
                   >
-                    <span className="text-2xl">+</span>
-                    <span className="text-xs font-medium">Lägg till</span>
-                  </button>
-                )}
-              </motion.div>
-            )
-          })}
+                    {/* Date number */}
+                    <div className="flex items-center justify-between mb-1">
+                      <span
+                        className={`text-sm font-semibold ${
+                          !isCurrentMonth
+                            ? 'text-gray-400'
+                            : isTodayDate
+                            ? 'text-primary'
+                            : 'text-gray-700'
+                        }`}
+                      >
+                        {format(day, 'd')}
+                      </span>
+
+                      {/* Week number on Mondays */}
+                      {day.getDay() === 1 && (
+                        <span className="text-xs text-gray-400">
+                          v{getWeek(day, { locale: sv })}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Droppable content area */}
+                  <DroppableDay dateStr={dateStr} isOver={isDropTarget && isCurrentMonth}>
+                    {/* Meal plans for this day */}
+                    {plansForDay.length > 0 ? (
+                      <div className="flex-1 flex flex-col gap-1 pt-1 overflow-visible">
+                        <AnimatePresence>
+                          {plansForDay.map((plan) => {
+                            const recipe = getRecipeForPlan(plan)
+                            if (!recipe) return null
+
+                            return (
+                              <DraggableMealItem
+                                key={plan.id}
+                                plan={plan}
+                                recipe={recipe}
+                                onViewMeal={onViewMeal}
+                                onDeleteMeal={onDeleteMeal}
+                              />
+                            )
+                          })}
+                        </AnimatePresence>
+
+                        {/* Add more button when meals exist */}
+                        {isCurrentMonth && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              onAddMeal(dateStr)
+                            }}
+                            className="flex items-center justify-center gap-1 py-1 border border-dashed border-gray-200 hover:border-primary rounded text-gray-400 hover:text-primary hover:bg-primary-light/30 transition-all text-[10px]"
+                          >
+                            <span>+</span>
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      /* Add meal button - when NO meals exist */
+                      isCurrentMonth ? (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onAddMeal(dateStr)
+                          }}
+                          className="flex-1 flex flex-col items-center justify-center gap-0.5 border-2 border-dashed border-gray-200 hover:border-primary rounded-lg text-gray-400 hover:text-primary transition-all hover:bg-primary-light/50"
+                        >
+                          <span className="text-lg">+</span>
+                          <span className="text-[10px] font-medium">Lägg till</span>
+                        </button>
+                      ) : (
+                        <div className="flex-1" />
+                      )
+                    )}
+                  </DroppableDay>
+                </div>
+              )
+            })}
+          </div>
         </div>
-      </div>
+
+        {/* Drag Overlay - shows preview while dragging */}
+        <DragOverlay>
+          {activeDragRecipe && (
+            <div className="px-2 py-1.5 bg-gradient-to-r from-primary to-secondary text-white rounded-lg text-xs font-medium shadow-xl flex items-center gap-1.5 opacity-90">
+              {activeDragRecipe.image_url && (
+                <img
+                  src={activeDragRecipe.image_url}
+                  alt={activeDragRecipe.name}
+                  className="w-5 h-5 min-w-[20px] rounded object-cover"
+                />
+              )}
+              <span className="truncate max-w-[120px]">{activeDragRecipe.name}</span>
+              {isAltPressed && (
+                <span className="ml-1 px-1 bg-white/20 rounded text-[10px]">Kopiera</span>
+              )}
+            </div>
+          )}
+        </DragOverlay>
+      </DndContext>
       
       {/* Legend */}
       <div className="flex items-center gap-4 text-sm text-gray-600">

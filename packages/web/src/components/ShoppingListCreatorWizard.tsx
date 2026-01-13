@@ -3,9 +3,19 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { DateRangeSelector } from './DateRangeSelector'
 import { FreshnessAnalyzer } from './FreshnessAnalyzer'
 import { StrategySelector } from './StrategySelector'
-import { ShoppingListGenerator } from '../lib/shoppingListGenerator'
+import { supabase } from '../lib/supabase'
 import type { MealPlan, Recipe } from '@shared/types'
 import type { FreshnessWarning } from '@shared/shoppingListTypes'
+
+interface PreviewIngredient {
+  ingredient_name: string
+  quantity: number
+  unit: string
+  category: string
+  freshness_days: number
+  used_on_dates: string[]
+  recipe_count: number
+}
 
 interface ShoppingListCreatorWizardProps {
   isOpen: boolean
@@ -35,10 +45,10 @@ export function ShoppingListCreatorWizard({
   const [perishableCount, setPerishableCount] = useState(0)
   const [safeCount, setSafeCount] = useState(0)
   
-  const handleDateSelect = (fromOrRange: string | { start: string; end: string }, to?: string) => {
+  const handleDateSelect = async (fromOrRange: string | { start: string; end: string }, to?: string) => {
     let from: string
     let toDate: string
-    
+
     // Support both old format (from, to) and new format ({ start, end })
     if (typeof fromOrRange === 'object') {
       from = fromOrRange.start
@@ -47,45 +57,100 @@ export function ShoppingListCreatorWizard({
       from = fromOrRange
       toDate = to || fromOrRange
     }
-    
+
     setDateFrom(from)
     setDateTo(toDate)
-    
-    // Analyze ingredients
-    const ingredients = ShoppingListGenerator.aggregateIngredients(
-      mealPlans,
-      recipes,
-      from,
-      toDate
-    )
-    
-    const analysisWarnings = ShoppingListGenerator.analyzeFreshness(ingredients, from)
-    
-    setTotalIngredients(ingredients.length)
-    setWarnings(analysisWarnings)
-    
-    const perishable = analysisWarnings.reduce((sum, w) => sum + w.item_count, 0)
-    setSafeCount(ingredients.length - perishable)
-    setPerishableCount(perishable)
-    
+
+    // Use backend preview function for ingredient analysis
+    try {
+      const { data: previewData, error } = await supabase
+        .rpc('preview_shopping_list', {
+          target_user_id: userId,
+          date_from: from,
+          date_to: toDate
+        })
+
+      if (error) {
+        console.error('Error previewing shopping list:', error)
+        // Fall back to showing no ingredients
+        setTotalIngredients(0)
+        setWarnings([])
+        setSafeCount(0)
+        setPerishableCount(0)
+      } else {
+        const ingredients = previewData as PreviewIngredient[]
+        console.log('Preview ingredients from backend:', ingredients)
+
+        // Analyze freshness based on category shelf life
+        const analysisWarnings: FreshnessWarning[] = []
+        const highSeverityCategories = ['MEAT_FRESH', 'MEAT_GROUND', 'MEAT_POULTRY', 'FISH_FRESH', 'SHELLFISH']
+        const mediumSeverityCategories = ['DAIRY_MILK', 'FRESH_HERBS', 'SALAD_LEAFY']
+
+        // Group perishable items by category for warnings
+        const perishableItems = ingredients.filter(ing =>
+          highSeverityCategories.includes(ing.category) ||
+          mediumSeverityCategories.includes(ing.category) ||
+          ing.freshness_days <= 5
+        )
+
+        if (perishableItems.length > 0) {
+          // Group by category for better warnings
+          const byCategory = perishableItems.reduce((acc, item) => {
+            if (!acc[item.category]) acc[item.category] = []
+            acc[item.category].push(item)
+            return acc
+          }, {} as Record<string, PreviewIngredient[]>)
+
+          for (const [category, items] of Object.entries(byCategory)) {
+            const isHighSeverity = highSeverityCategories.includes(category)
+            const shelfLife = Math.min(...items.map(i => i.freshness_days))
+            const severity = isHighSeverity ? 'high' : shelfLife <= 3 ? 'high' : 'medium'
+            const recommendation = shelfLife <= 2
+              ? 'Frys in direkt eller använd inom 1-2 dagar'
+              : 'Köp närmare användningsdatum för bästa fräschör'
+
+            analysisWarnings.push({
+              severity,
+              category: category as any, // Type assertion for IngredientCategory
+              item_count: items.length,
+              message: `Håller max ${shelfLife} dagar i kyl`,
+              recommendation,
+              affected_items: items.map(i => i.ingredient_name)
+            })
+          }
+        }
+
+        setTotalIngredients(ingredients.length)
+        setWarnings(analysisWarnings)
+
+        const perishableCount = perishableItems.length
+        setSafeCount(ingredients.length - perishableCount)
+        setPerishableCount(perishableCount)
+      }
+    } catch (err) {
+      console.error('Error in handleDateSelect:', err)
+    }
+
     setStep('analysis')
   }
   
   const handleStrategySelect = async (strategy: 'include_all' | 'exclude_perishables' | 'split_lists' | 'custom') => {
     setStep('generating')
-    
+
     try {
-      const lists = await ShoppingListGenerator.generateLists(
-        userId,
-        mealPlans,
-        recipes,
-        {
-          dateFrom,
-          dateTo,
-          strategy
-        }
-      )
-      
+      // Generate list metadata - actual items will be generated by backend
+      const listName = `Inköpslista ${new Date(dateFrom).toLocaleDateString('sv-SE', { day: 'numeric', month: 'short' })} - ${new Date(dateTo).toLocaleDateString('sv-SE', { day: 'numeric', month: 'short' })}`
+
+      const lists = [{
+        user_id: userId,
+        name: listName,
+        date_range_start: dateFrom,
+        date_range_end: dateTo,
+        status: 'active',
+        split_mode: strategy === 'split_lists' ? 'split' : 'single',
+        warnings: warnings
+      }]
+
       onComplete(lists)
       handleClose()
     } catch (error) {

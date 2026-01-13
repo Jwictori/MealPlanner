@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { getCategoryInfo } from '@shared/ingredientCategories'
 import { ShoppingListStatistics } from './ShoppingListStatistics'

@@ -20,7 +20,7 @@ interface AppState {
   removeMealPlan: (id: string) => void
   
   // UI State
-  currentView: 'recipes' | 'planning' | 'shopping' | 'settings'
+  currentView: 'recipes' | 'planning' | 'shopping' | 'settings' | 'admin'
   setCurrentView: (view: AppState['currentView']) => void
   
   // Loading

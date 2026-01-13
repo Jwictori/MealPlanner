@@ -111,7 +111,7 @@ export function SelectRecipeModal({
                           <h3 className="font-bold mb-1">{recipe.name}</h3>
                           <div className="flex items-center gap-4 text-sm text-text-secondary mb-2">
                             <span>👥 {recipe.servings} portioner</span>
-                            <span>📝 {recipe.ingredients.length} ingredienser</span>
+                            <span>📝 {(recipe.recipe_ingredients?.length ?? recipe.ingredients?.length ?? 0)} ingredienser</span>
                           </div>
                           {recipe.tags && recipe.tags.length > 0 && (
                             <div className="flex flex-wrap gap-2">

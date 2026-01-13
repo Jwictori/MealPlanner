@@ -323,7 +323,33 @@ export function ShoppingListView({
             .map(category => {
               const catItems = itemsByCategory.get(category)!
               const categoryInfo = getCategoryInfo(category)
-              if (!categoryInfo) return null // Skip unknown categories
+              if (!categoryInfo) {
+                // Show items with unknown category in a default "Övrigt" category
+                const catItems = itemsByCategory.get(category)!
+                const checkedCount = catItems.filter(i => i.checked).length
+                
+                return (
+                  <div key={category} className="bg-surface rounded-xl overflow-hidden border-2 border-gray-200">
+                    <div className="p-4 bg-gray-100">
+                      <h3 className="font-bold text-lg">📦 Övrigt</h3>
+                      <p className="text-sm text-text-secondary">
+                        {checkedCount}/{catItems.length} klara
+                      </p>
+                    </div>
+                    <div className="p-4 space-y-2">
+                      {catItems.map(item => (
+                        <ShoppingListItemCard
+                          key={item.id}
+                          item={item}
+                          onCheck={onCheckItem}
+                          onUpdateQuantity={onUpdateItem ? (id, qty) => onUpdateItem(id, { quantity: qty }) : undefined}
+                          onDelete={onDeleteItem}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )
+              }
               const checkedCount = catItems.filter(i => i.checked).length
               const isCollapsed = collapsedCategories.has(category)
               

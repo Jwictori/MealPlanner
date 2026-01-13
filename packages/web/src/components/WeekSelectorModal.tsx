@@ -8,6 +8,7 @@ interface WeekSelectorModalProps {
   isOpen: boolean
   onClose: () => void
   onSelectWeek: (weekStart: Date) => void
+  onClearMonth?: () => void
   currentMonth: Date
   mealPlans: MealPlan[]
 }
@@ -16,6 +17,7 @@ export function WeekSelectorModal({
   isOpen,
   onClose,
   onSelectWeek,
+  onClearMonth,
   currentMonth,
   mealPlans
 }: WeekSelectorModalProps) {
@@ -89,6 +91,45 @@ export function WeekSelectorModal({
                 </div>
               ) : (
                 <div className="space-y-2 max-h-96 overflow-y-auto">
+                  {/* Clear entire month option */}
+                  {onClearMonth && (
+                    <button
+                      onClick={() => {
+                        onClearMonth()
+                        onClose()
+                      }}
+                      className="w-full p-4 rounded-xl border-2 border-red-300 bg-red-50 hover:bg-red-100 transition-all text-left group"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="font-semibold text-red-700">
+                            Rensa hela {format(currentMonth, 'MMMM', { locale: sv })}
+                          </div>
+                          <div className="text-sm text-red-600 mt-1">
+                            Ta bort alla måltider i månaden
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <div className="text-right">
+                            <div className="text-2xl font-bold text-red-600">
+                              {mealPlans.filter(mp => isSameMonth(new Date(mp.date), currentMonth)).length}
+                            </div>
+                            <div className="text-xs text-red-500">
+                              totalt
+                            </div>
+                          </div>
+                          <div className="text-2xl">
+                            🗑️
+                          </div>
+                        </div>
+                      </div>
+                    </button>
+                  )}
+
+                  <div className="text-xs text-gray-500 uppercase tracking-wide pt-2 pb-1 px-1">
+                    Eller välj en vecka:
+                  </div>
+
                   {weeksWithMeals.map((week, index) => (
                     <button
                       key={index}

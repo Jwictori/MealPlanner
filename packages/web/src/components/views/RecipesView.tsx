@@ -21,7 +21,10 @@ export function RecipesView() {
     try {
       const { data, error } = await supabase
         .from('recipes')
-        .select('*')
+        .select(`
+          *,
+          recipe_ingredients (*)
+        `)
         .or(`user_id.eq.${user.id},is_public.eq.true`)
         .order('created_at', { ascending: false })
 

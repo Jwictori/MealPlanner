@@ -6,6 +6,14 @@ import { RecipePreviewCard } from './RecipePreviewCard'
 import { CollapsibleSection } from './CollapsibleSection'
 import type { Recipe } from '@shared/types'
 
+// Helper to get ingredient names (supports both new and legacy formats)
+function getIngredientNames(recipe: Recipe): string[] {
+  if (recipe.recipe_ingredients && recipe.recipe_ingredients.length > 0) {
+    return recipe.recipe_ingredients.map(ri => ri.ingredient_name)
+  }
+  return (recipe.ingredients ?? []).map(ing => ing.name)
+}
+
 interface AIMealPlannerProps {
   isOpen: boolean
   onClose: () => void
@@ -79,7 +87,7 @@ export function AIMealPlanner({
           name: r.name,
           tags: r.tags || [],
           servings: r.servings,
-          ingredients: r.ingredients.map(i => i.name).filter(Boolean),
+          ingredients: getIngredientNames(r).filter(Boolean),
         }))
 
         const { data: { session } } = await supabase.auth.getSession()

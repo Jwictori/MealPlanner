@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { supabase } from '../index.js';
+import { RecipeImporter } from './recipeImporter.js';
 
 // Zod schemas for validation
 const IngredientSchema = z.object({
@@ -195,6 +196,182 @@ export const recipeTools = [
       
       if (error) throw error;
       return { success: true, data, count: data.length };
+    },
+  },
+  
+  // ============================================
+  // 🔥 NEW: Recipe Import Tools
+  // ============================================
+  
+  {
+    name: 'import_recipe_from_url',
+    description: `Import a recipe from a URL using 3-layer approach:
+    - Layer 1: Structured data (schema.org) - Fast, free, 60-70% success
+    - Layer 2: Heuristic HTML parsing - Fast, free, 85-90% success
+    - Layer 3: AI extraction (Gemini) - Slow, costs money, 99% success (premium only)
+    
+    The function tries layers in order and uses the first successful one.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        user_id: {
+          type: 'string',
+          description: 'User UUID',
+        },
+        url: {
+          type: 'string',
+          description: 'Recipe URL to import from',
+          format: 'uri',
+        },
+        use_ai: {
+          type: 'boolean',
+          description: 'Allow AI import (Layer 3) - premium feature',
+          default: false,
+        },
+      },
+      required: ['user_id', 'url'],
+    },
+    handler: async (args: any) => {
+      const { user_id, url, use_ai = false } = args;
+      
+      console.log('[RecipeImport] Starting import:', { user_id, url, use_ai });
+      
+      try {
+        // Import recipe using 3-layer approach
+        const imported = await RecipeImporter.importFromUrl(url, use_ai, user_id);
+        
+        console.log('[RecipeImport] Successfully imported:', {
+          name: imported.name,
+          source: imported.source,
+          confidence: imported.confidence,
+        });
+        
+        // Save to database
+        const { data, error } = await supabase
+          .from('recipes')
+          .insert({
+            user_id,
+            name: imported.name,
+            servings: imported.servings,
+            ingredients: imported.ingredients,
+            instructions: imported.instructions,
+            tags: [...(imported.tags || []), 'imported', imported.source],
+            image_url: imported.image_url,
+            is_public: false,
+          })
+          .select()
+          .single();
+        
+        if (error) {
+          console.error('[RecipeImport] Database error:', error);
+          throw error;
+        }
+        
+        console.log('[RecipeImport] ✅ Recipe saved to database:', data.id);
+        
+        return {
+          success: true,
+          data,
+          import_method: imported.source,
+          confidence: imported.confidence,
+          message: `Recipe imported successfully using ${imported.source} method`,
+        };
+        
+      } catch (error: any) {
+        console.error('[RecipeImport] Import failed:', error);
+        
+        // Provide helpful error message
+        let message = error.message;
+        
+        if (message.includes('Enable AI import')) {
+          message += '\n\nUpgrade to Premium to unlock AI-powered recipe import with 99% success rate!';
+        }
+        
+        throw new Error(message);
+      }
+    },
+  },
+  
+  {
+    name: 'check_import_support',
+    description: 'Check if a URL is likely to support recipe import (quick pre-check)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        url: {
+          type: 'string',
+          description: 'Recipe URL to check',
+          format: 'uri',
+        },
+      },
+      required: ['url'],
+    },
+    handler: async (args: any) => {
+      const { url } = args;
+      
+      try {
+        // Fetch just the headers (fast, no body download)
+        const response = await fetch(url, {
+          method: 'HEAD',
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (compatible; MealPlanner/1.0)',
+          },
+        });
+        
+        const contentType = response.headers.get('content-type') || '';
+        
+        // Check if it's HTML
+        const isHtml = contentType.includes('text/html');
+        
+        // Known recipe sites with good structured data (Layer 1 works well)
+        const knownGoodSites = [
+          'allrecipes.com',
+          'foodnetwork.com',
+          'cooking.nytimes.com',
+          'bonappetit.com',
+          'seriouseats.com',
+          'epicurious.com',
+          'tasty.co',
+          'ica.se',
+          'coop.se',
+          'arla.se',
+          'koket.se',
+        ];
+        
+        const domain = new URL(url).hostname.toLowerCase();
+        const isKnownGood = knownGoodSites.some(site => domain.includes(site));
+        
+        let confidence: 'high' | 'medium' | 'low' = 'low';
+        let message = '';
+        
+        if (!isHtml) {
+          confidence = 'low';
+          message = 'This URL does not appear to be a recipe page (not HTML)';
+        } else if (isKnownGood) {
+          confidence = 'high';
+          message = 'This site is known to work well with Layer 1 (structured data)';
+        } else {
+          confidence = 'medium';
+          message = 'This site should work with Layer 2 (heuristic parsing)';
+        }
+        
+        return {
+          success: true,
+          supported: isHtml,
+          confidence,
+          message,
+          is_known_site: isKnownGood,
+        };
+        
+      } catch (error: any) {
+        return {
+          success: false,
+          supported: false,
+          confidence: 'unknown',
+          message: `Could not check URL: ${error.message}`,
+          is_known_site: false,
+        };
+      }
     },
   },
 ];

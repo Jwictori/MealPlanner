@@ -4,6 +4,60 @@ import { format, addDays, startOfWeek, isSameDay } from 'date-fns'
 import { sv } from 'date-fns/locale'
 import type { Recipe, MealPlan } from '@shared/types'
 
+// Recipe card component using "Floor Fade" pattern (industry best practice)
+// Pattern: Image fills card + dark gradient at bottom + white text overlay
+function RecipeMealCard({
+  recipe,
+  onRemove
+}: {
+  recipe: Recipe
+  onRemove: () => void
+}) {
+  const [imgError, setImgError] = useState(false)
+  const hasImage = recipe.image_url && !imgError
+
+  return (
+    <div className="relative h-32 rounded-xl overflow-hidden group cursor-pointer hover:shadow-lg transition-shadow">
+      {/* Background: Image or gradient fallback */}
+      {hasImage ? (
+        <img
+          src={recipe.image_url}
+          alt={recipe.name}
+          className="absolute inset-0 w-full h-full object-cover"
+          loading="lazy"
+          onError={() => setImgError(true)}
+        />
+      ) : (
+        <div className="absolute inset-0 bg-gradient-to-br from-primary to-secondary" />
+      )}
+
+      {/* Dark gradient overlay at bottom (floor fade) */}
+      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
+
+      {/* Delete button - top right */}
+      <button
+        onClick={(e) => {
+          e.stopPropagation()
+          onRemove()
+        }}
+        className="absolute top-2 right-2 w-6 h-6 bg-black/50 hover:bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center text-sm"
+      >
+        ✕
+      </button>
+
+      {/* Text content at bottom */}
+      <div className="absolute bottom-0 left-0 right-0 p-3">
+        <h4 className="font-bold text-white text-sm leading-tight line-clamp-2 drop-shadow-md">
+          {recipe.name}
+        </h4>
+        <p className="text-white/80 text-xs mt-1">
+          {recipe.servings} portioner
+        </p>
+      </div>
+    </div>
+  )
+}
+
 interface WeekCalendarProps {
   mealPlans: MealPlan[]
   recipes: Recipe[]
@@ -134,32 +188,11 @@ export function WeekCalendar({
 
               {/* Meal Content */}
               {meal?.recipe ? (
-                <div 
-                  onClick={() => onRecipeClick(meal.recipe!)}
-                  className="cursor-pointer group"
-                >
-                  <div className="bg-gradient-to-br from-secondary-light to-primary-light rounded-xl p-4 hover:shadow-md transition-all h-32 flex flex-col">
-                    <div className="flex items-start justify-between mb-2">
-                      <span className="text-2xl">🍽️</span>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          onRemoveMeal(meal.plan.id)
-                        }}
-                        className="text-red-500 hover:text-red-700 text-xl opacity-0 group-hover:opacity-100 transition-opacity"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                    <div className="flex-1 flex flex-col justify-center">
-                      <h4 className="font-bold text-sm mb-1 line-clamp-2">
-                        {meal.recipe.name}
-                      </h4>
-                      <p className="text-xs text-text-secondary">
-                        {meal.recipe.servings} portioner
-                      </p>
-                    </div>
-                  </div>
+                <div onClick={() => onRecipeClick(meal.recipe!)}>
+                  <RecipeMealCard
+                    recipe={meal.recipe}
+                    onRemove={() => onRemoveMeal(meal.plan.id)}
+                  />
                 </div>
               ) : (
                 <button

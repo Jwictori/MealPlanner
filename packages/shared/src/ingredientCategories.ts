@@ -7,46 +7,51 @@ export type IngredientCategory =
   | 'VEGETABLES'               // Grönsaker
   | 'SALAD_LEAFY'             // Sallad & Bladgrönt
   | 'FRESH_HERBS'             // Färska örter
-  
+
   // Mejeri & Ägg
   | 'DAIRY_MILK'              // Mjölk & Grädde
   | 'DAIRY_YOGURT'            // Yoghurt & Fil
   | 'DAIRY_CHEESE'            // Ost
   | 'DAIRY_BUTTER'            // Smör & Matfett
   | 'EGGS'                    // Ägg
-  
+
   // Kött & Chark
   | 'MEAT_FRESH'              // Färskt kött
   | 'MEAT_GROUND'             // Köttfärs
   | 'MEAT_POULTRY'            // Kyckling & Fågel
   | 'MEAT_DELI'               // Charkuterier
-  
+
   // Fisk & Skaldjur
   | 'FISH_FRESH'              // Färsk fisk
   | 'FISH_FROZEN'             // Fryst fisk
   | 'SHELLFISH'               // Skaldjur
-  
+
   // Bröd & Bakning
   | 'BREAD'                   // Bröd
-  | 'BAKING_FLOUR'            // Mjöl & Socker
+  | 'BAKING_FLOUR'            // Mjöl
+  | 'BAKING_SUGAR'            // Socker
   | 'BAKING_SUPPLIES'         // Bakpulver & Jäst
-  
+
   // Konserver & Torrvaror
   | 'PASTA_RICE'              // Pasta & Ris
   | 'CANNED'                  // Konserver
   | 'LEGUMES'                 // Baljväxter
+  | 'NUTS_SEEDS'              // Nötter & Frön
   | 'DRIED_SPICES'            // Torkade kryddor
-  
+
   // Kryddor & Såser
   | 'SPICES'                  // Kryddor (mix)
   | 'SAUCES'                  // Såser & Dressing
   | 'OIL_VINEGAR'            // Olja & Vinäger
-  
+
   // Fryst
   | 'FROZEN_MEAT'             // Fryst kött
   | 'FROZEN_FISH'             // Fryst fisk
   | 'FROZEN_VEGETABLES'       // Frysta grönsaker
   | 'FROZEN_OTHER'            // Övrig frys
+
+  // Övrigt
+  | 'OTHER'                   // Övrigt
 
 export interface CategoryInfo {
   key: IngredientCategory
@@ -290,8 +295,8 @@ export const CATEGORY_DATABASE: Record<IngredientCategory, CategoryInfo> = {
   
   BAKING_FLOUR: {
     key: 'BAKING_FLOUR',
-    name_sv: 'Mjöl & Socker',
-    name_en: 'Flour & Sugar',
+    name_sv: 'Mjöl',
+    name_en: 'Flour',
     icon: '🌾',
     color: '#78350F',
     sortOrder: 41,
@@ -300,7 +305,20 @@ export const CATEGORY_DATABASE: Record<IngredientCategory, CategoryInfo> = {
     tips_sv: 'Håller länge i skafferi.',
     tips_en: 'Lasts long in pantry.'
   },
-  
+
+  BAKING_SUGAR: {
+    key: 'BAKING_SUGAR',
+    name_sv: 'Socker',
+    name_en: 'Sugar',
+    icon: '🍬',
+    color: '#F5F5DC',
+    sortOrder: 42,
+    shelfLife: 730,
+    freezable: false,
+    tips_sv: 'Håller praktiskt taget för evigt torrt.',
+    tips_en: 'Keeps practically forever if dry.'
+  },
+
   BAKING_SUPPLIES: {
     key: 'BAKING_SUPPLIES',
     name_sv: 'Bakpulver & Jäst',
@@ -353,7 +371,20 @@ export const CATEGORY_DATABASE: Record<IngredientCategory, CategoryInfo> = {
     tips_sv: 'Torkade baljväxter håller mycket länge.',
     tips_en: 'Dried legumes last very long.'
   },
-  
+
+  NUTS_SEEDS: {
+    key: 'NUTS_SEEDS',
+    name_sv: 'Nötter & Frön',
+    name_en: 'Nuts & Seeds',
+    icon: '🥜',
+    color: '#8B4513',
+    sortOrder: 53,
+    shelfLife: 180,
+    freezable: true,
+    tips_sv: 'Förvara svalt och mörkt. Fryser bra.',
+    tips_en: 'Store cool and dark. Freezes well.'
+  },
+
   DRIED_SPICES: {
     key: 'DRIED_SPICES',
     name_sv: 'Torkade Kryddor',
@@ -458,6 +489,19 @@ export const CATEGORY_DATABASE: Record<IngredientCategory, CategoryInfo> = {
     freezable: true,
     tips_sv: 'Varierar beroende på produkt.',
     tips_en: 'Varies by product.'
+  },
+
+  OTHER: {
+    key: 'OTHER',
+    name_sv: 'Övrigt',
+    name_en: 'Other',
+    icon: '📦',
+    color: '#9CA3AF',
+    sortOrder: 99,
+    shelfLife: 30,
+    freezable: false,
+    tips_sv: 'Kontrollera förpackningen.',
+    tips_en: 'Check the package.'
   }
 }
 
@@ -638,9 +682,62 @@ export function categorizeIngredient(ingredientName: string, locale: string = 's
   return 'PASTA_RICE'
 }
 
+// Map Swedish/legacy database categories to English keys
+const SWEDISH_TO_ENGLISH_CATEGORY: Record<string, IngredientCategory> = {
+  // Swedish categories from database
+  'GRÖNSAKER': 'VEGETABLES',
+  'FRUKT': 'FRUIT',
+  'MEJERI': 'DAIRY_MILK',
+  'KÖTT': 'MEAT_FRESH',
+  'FÅGEL': 'MEAT_POULTRY',
+  'FISK': 'FISH_FRESH',
+  'FISH': 'FISH_FRESH',
+  'SKALDJUR': 'SHELLFISH',
+  'ÖRTER': 'FRESH_HERBS',
+  'KRYDDOR': 'SPICES',
+  'TORKADE_KRYDDOR': 'DRIED_SPICES',
+  'SÅSER': 'SAUCES',
+  'OLJA_VINÄGER': 'OIL_VINEGAR',
+  'PASTA_RIS': 'PASTA_RICE',
+  'BRÖD': 'BREAD',
+  'BAKNING': 'BAKING_FLOUR',
+  'BAKPULVER_JÄST': 'BAKING_SUPPLIES',
+  'KONSERVER': 'CANNED',
+  'BALJVÄXTER': 'LEGUMES',
+  'ÄGG': 'EGGS',
+  'OST': 'DAIRY_CHEESE',
+  'SMÖR': 'DAIRY_BUTTER',
+  'YOGHURT': 'DAIRY_YOGURT',
+  'SALLAD': 'SALAD_LEAFY',
+  'CHARK': 'MEAT_DELI',
+  'KÖTTFÄRS': 'MEAT_GROUND',
+  'FRYST': 'FROZEN_OTHER',
+  'FRYST_KÖTT': 'FROZEN_MEAT',
+  'FRYST_FISK': 'FROZEN_FISH',
+  'FRYSTA_GRÖNSAKER': 'FROZEN_VEGETABLES',
+  // Legacy/mixed categories
+  'ÖVRIGT': 'OTHER',
+  'GRAINS': 'PASTA_RICE',
+  'PANTRY': 'PASTA_RICE',
+  'SKAFFERI': 'PASTA_RICE',
+  'NÖTTER': 'NUTS_SEEDS',
+}
+
 // Get category info in current language
-export function getCategoryInfo(category: IngredientCategory, locale: string = 'sv'): CategoryInfo | undefined {
-  return CATEGORY_DATABASE[category]
+export function getCategoryInfo(category: string, locale: string = 'sv'): CategoryInfo | undefined {
+  // First try direct lookup (English keys)
+  if (category in CATEGORY_DATABASE) {
+    return CATEGORY_DATABASE[category as IngredientCategory]
+  }
+
+  // Then try Swedish mapping
+  const mappedCategory = SWEDISH_TO_ENGLISH_CATEGORY[category.toUpperCase()]
+  if (mappedCategory) {
+    return CATEGORY_DATABASE[mappedCategory]
+  }
+
+  // Return undefined if not found
+  return undefined
 }
 
 // Get display name for category

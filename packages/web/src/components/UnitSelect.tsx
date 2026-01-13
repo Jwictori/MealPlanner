@@ -14,6 +14,8 @@ interface UnitSelectProps {
 }
 
 export function UnitSelect({ value, onChange, className = "" }: UnitSelectProps) {
+  // Handle null/undefined value to avoid React warning
+  const safeValue = value ?? ""
   const [units, setUnits] = useState<Unit[]>([])
 
   useEffect(() => {
@@ -47,7 +49,7 @@ export function UnitSelect({ value, onChange, className = "" }: UnitSelectProps)
 
   return (
     <select
-      value={value}
+      value={safeValue}
       onChange={(e) => onChange(e.target.value)}
       className={className}
     >

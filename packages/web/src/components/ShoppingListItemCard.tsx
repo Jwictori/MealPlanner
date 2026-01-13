@@ -16,18 +16,24 @@ interface ShoppingListItemCardProps {
 export function ShoppingListItemCard({
   item,
   onCheck,
-  onUpdateQuantity,
-  onDelete,
+  onUpdateQuantity: _onUpdateQuantity,
+  onDelete: _onDelete,
   compact = false
 }: ShoppingListItemCardProps) {
   
   const [showDetails, setShowDetails] = useState(false)
-  const categoryInfo = getCategoryInfo(item.category)
-  
-  // Fallback if category not found
-  if (!categoryInfo) {
-    console.warn('Unknown category for item:', item.ingredient_name, item.category)
-    return null
+  const categoryInfo = getCategoryInfo(item.category) || {
+    // Fallback for unknown categories
+    key: 'PASTA_RICE' as const,
+    name_sv: item.category || 'Övrigt',
+    name_en: item.category || 'Other',
+    icon: '📦',
+    color: '#9CA3AF',
+    sortOrder: 999,
+    shelfLife: 30,
+    freezable: false,
+    tips_sv: 'Okänd kategori',
+    tips_en: 'Unknown category'
   }
   
   const formatDate = (dateStr: string) => {

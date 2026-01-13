@@ -37,16 +37,25 @@ export class ShoppingListGenerator {
       return mpDate >= dateFrom && mpDate <= dateTo
     })
     
-    // Aggregate ingredients
+    // Aggregate ingredients (supports both new recipe_ingredients and legacy ingredients)
     for (const plan of filteredPlans) {
       const recipe = recipes.find(r => r.id === plan.recipe_id)
       if (!recipe) continue
-      
-      for (const ingredient of recipe.ingredients) {
+
+      // Get ingredients from either new format (recipe_ingredients) or legacy format (ingredients)
+      const ingredientsList = recipe.recipe_ingredients && recipe.recipe_ingredients.length > 0
+        ? recipe.recipe_ingredients.map(ri => ({
+            name: ri.ingredient_name,
+            amount: ri.quantity,
+            unit: ri.unit
+          }))
+        : (recipe.ingredients ?? [])
+
+      for (const ingredient of ingredientsList) {
         if (!ingredient.name) continue
-        
+
         const key = `${ingredient.name.toLowerCase()}_${ingredient.unit || ''}`
-        
+
         if (ingredientMap.has(key)) {
           const existing = ingredientMap.get(key)!
           existing.totalQuantity += ingredient.amount || 0
@@ -229,7 +238,8 @@ export class ShoppingListGenerator {
       date_range_end: dateTo,
       status: 'active',
       split_mode: 'single',
-      warnings
+      warnings,
+      items
     }]
   }
   
@@ -316,18 +326,18 @@ export class ShoppingListGenerator {
     ingredients: AggregatedIngredient[],
     dateFrom: string,
     dateTo: string,
-    warnings: FreshnessWarning[]
+    _warnings: FreshnessWarning[]
   ): Partial<ShoppingList>[] {
-    
+
     // Only include items that will stay fresh for the entire period
     const totalDays = differenceInDays(parseISO(dateTo), parseISO(dateFrom))
-    
+
     const includedItems = ingredients.filter(ing => {
       const categoryInfo = getCategoryInfo(ing.category)
       if (!categoryInfo) return false // Exclude unknown categories
       return categoryInfo.shelfLife >= totalDays
     })
-    
+
     return this.generateSingleList(userId, includedItems, dateFrom, dateTo, [])
   }
   

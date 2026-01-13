@@ -7,6 +7,7 @@ import { RecipesView } from './components/views/RecipesView'
 import { PlanningView } from './components/views/PlanningView'
 import { ShoppingView } from './components/views/ShoppingView'
 import { SettingsView } from './components/views/SettingsView'
+import { AdminView } from './components/views/AdminView'
 
 function App() {
   const { currentView, setUser, setRecipes } = useStore()
@@ -39,8 +40,11 @@ function App() {
   const loadRecipes = async (userId: string) => {
     const { data, error } = await supabase
       .from('recipes')
-      .select('*')
-      .or(`user_id.eq.${userId},is_public.eq.true`)  // ← FIXA HÄR!
+      .select(`
+        *,
+        recipe_ingredients (*)
+      `)
+      .or(`user_id.eq.${userId},is_public.eq.true`)
       .order('created_at', { ascending: false })
 
     if (data && !error) {
@@ -57,6 +61,7 @@ function App() {
         {currentView === 'planning' && <PlanningView />}
         {currentView === 'shopping' && <ShoppingView />}
         {currentView === 'settings' && <SettingsView />}
+        {currentView === 'admin' && <AdminView />}
       </main>
 
       <Navigation />

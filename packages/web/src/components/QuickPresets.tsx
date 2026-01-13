@@ -2,6 +2,14 @@ import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import type { Recipe } from '@shared/types'
 
+// Helper to get ingredients in a consistent format (supports both new and legacy)
+function getIngredientNames(recipe: Recipe): string[] {
+  if (recipe.recipe_ingredients && recipe.recipe_ingredients.length > 0) {
+    return recipe.recipe_ingredients.map(ri => ri.ingredient_name)
+  }
+  return (recipe.ingredients ?? []).map(ing => ing.name)
+}
+
 interface Preset {
   id: string
   name: string
@@ -32,11 +40,11 @@ const PRESETS: Preset[] = [
     name: 'Proteinrikt',
     description: 'Perfekt för träning och muskelbygge',
     icon: '🏋️',
-    filter: (recipe) => 
-      recipe.tags?.includes('Protein') || 
-      recipe.ingredients.some(ing => 
-        ing.name && ['Kyckling', 'Lax', 'Köttfärs', 'Ägg', 'Tonfisk'].some(meat => 
-          ing.name.includes(meat)
+    filter: (recipe) =>
+      recipe.tags?.includes('Protein') ||
+      getIngredientNames(recipe).some(name =>
+        name && ['Kyckling', 'Lax', 'Köttfärs', 'Ägg', 'Tonfisk'].some(meat =>
+          name.includes(meat)
         )
       ),
   },
@@ -60,10 +68,9 @@ const PRESETS: Preset[] = [
     description: 'Prisvärt och gott',
     icon: '💰',
     filter: (recipe) => {
-      // Budget-friendly ingredients
       const budgetIngredients = ['Pasta', 'Ris', 'Köttfärs', 'Ägg', 'Potatis']
-      return recipe.ingredients.some(ing =>
-        ing.name && budgetIngredients.some(budget => ing.name.includes(budget))
+      return getIngredientNames(recipe).some(name =>
+        name && budgetIngredients.some(budget => name.includes(budget))
       )
     },
   },
@@ -72,10 +79,10 @@ const PRESETS: Preset[] = [
     name: 'Fisk & Skaldjur',
     description: 'Hälsosamt och gott från havet',
     icon: '🐟',
-    filter: (recipe) => 
+    filter: (recipe) =>
       recipe.tags?.includes('Fisk') ||
-      recipe.ingredients.some(ing =>
-        ing.name && ['Lax', 'Torsk', 'Räkor', 'Tonfisk'].some(fish => ing.name.includes(fish))
+      getIngredientNames(recipe).some(name =>
+        name && ['Lax', 'Torsk', 'Räkor', 'Tonfisk'].some(fish => name.includes(fish))
       ),
   },
   {
@@ -94,12 +101,12 @@ const PRESETS: Preset[] = [
     name: 'Hälsosamt',
     description: 'Nyttig och balanserad kost',
     icon: '🥗',
-    filter: (recipe) => 
+    filter: (recipe) =>
       recipe.tags?.includes('Nyttig') ||
       recipe.tags?.includes('Hälsosam') ||
-      recipe.ingredients.filter(ing => 
-        ing.name && ['Broccoli', 'Spenat', 'Sallad', 'Tomat', 'Paprika'].some(veg =>
-          ing.name.includes(veg)
+      getIngredientNames(recipe).filter(name =>
+        name && ['Broccoli', 'Spenat', 'Sallad', 'Tomat', 'Paprika'].some(veg =>
+          name.includes(veg)
         )
       ).length >= 2,
   },
@@ -131,31 +138,31 @@ export function QuickPresets({
       // Filter out allergies
       if (userPreferences.allergies?.length > 0) {
         filteredRecipes = filteredRecipes.filter(recipe =>
-          !recipe.ingredients.some(ing =>
-            ing.name && userPreferences.allergies.some((allergy: string) =>
-              ing.name.toLowerCase().includes(allergy.toLowerCase())
+          !getIngredientNames(recipe).some(name =>
+            name && userPreferences.allergies.some((allergy: string) =>
+              name.toLowerCase().includes(allergy.toLowerCase())
             )
           )
         )
       }
-      
+
       // Prefer loved foods
       if (userPreferences.love_foods?.length > 0) {
         filteredRecipes.sort((a, b) => {
-          const aScore = a.ingredients.filter(ing =>
-            ing.name && userPreferences.love_foods.some((love: string) =>
-              ing.name.toLowerCase().includes(love.toLowerCase())
+          const aScore = getIngredientNames(a).filter(name =>
+            name && userPreferences.love_foods.some((love: string) =>
+              name.toLowerCase().includes(love.toLowerCase())
             )
           ).length
-          const bScore = b.ingredients.filter(ing =>
-            ing.name && userPreferences.love_foods.some((love: string) =>
-              ing.name.toLowerCase().includes(love.toLowerCase())
+          const bScore = getIngredientNames(b).filter(name =>
+            name && userPreferences.love_foods.some((love: string) =>
+              name.toLowerCase().includes(love.toLowerCase())
             )
           ).length
           return bScore - aScore
         })
       }
-      
+
       // Filter by diet type
       if (userPreferences.diet_type === 'vegetarian' || userPreferences.diet_type === 'vegan') {
         filteredRecipes = filteredRecipes.filter(r => r.tags?.includes('Vegetarisk'))

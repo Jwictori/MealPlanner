@@ -54,7 +54,7 @@ const DEFAULT_PREFERENCES: UserPreferences = {
 }
 
 export function SettingsView() {
-  const { user } = useStore()
+  const { user, setCurrentView } = useStore()
   const [preferences, setPreferences] = useState<UserPreferences>(DEFAULT_PREFERENCES)
   const [isSaving, setIsSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState('')
@@ -214,6 +214,20 @@ export function SettingsView() {
               </select>
             </Field>
           </div>
+        </Section>
+
+        {/* Admin Section */}
+        <Section title="🔧 Utvecklare">
+          <p className="text-sm text-text-secondary mb-4">
+            Avancerade verktyg för att hantera receptimport och AI-regler.
+          </p>
+          <button
+            onClick={() => setCurrentView('admin')}
+            className="w-full px-4 py-3 bg-gray-100 hover:bg-gray-200 text-text rounded-xl font-semibold transition-colors flex items-center justify-center gap-2"
+          >
+            <span>🛠️</span>
+            <span>Öppna Admin-panel</span>
+          </button>
         </Section>
 
         <div className="sticky bottom-4 bg-surface border-2 border-primary rounded-2xl p-6 shadow-xl">

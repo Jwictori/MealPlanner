@@ -44,6 +44,28 @@ yarn-debug.log*
 # Supabase
 supabase/.branches
 supabase/.temp
+packages/backend/supabase/.temp/
+
+# TypeScript build artifacts
+*.tsbuildinfo
+packages/shared/dist/
+
+# Backup files
+*.backup
+*.bak
+*.old
+
+# Archive files in Project Files
+Project Files/*.zip
+Project Files/*.rar
+Project Files/*_extracted/
+Project Files/
+
+# Claude Code local settings
+.claude/
+
+# MCP configuration (contains local paths)
+.mcp.json
 
 # Misc
 *.pem

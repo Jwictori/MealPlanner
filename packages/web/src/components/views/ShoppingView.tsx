@@ -1,15 +1,13 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useStore } from '../../store/useStore'
 import { supabase } from '../../lib/supabase'
 import { ShoppingListView } from '../ShoppingListView'
 import { ShoppingListCreatorWizard } from '../ShoppingListCreatorWizard'
-import { ShoppingListGenerator } from '../../lib/shoppingListGenerator'
 import { ShoppingListSyncManager } from '../../lib/shoppingListSyncManager'
 import { SyncConflictDialog } from '../SyncConflictDialog'
-import { format, parseISO, differenceInDays } from 'date-fns'
+import { format, parseISO } from 'date-fns'
 import { sv } from 'date-fns/locale'
 import { motion, AnimatePresence } from 'framer-motion'
-import { getCategoryInfo } from '@shared/ingredientCategories'
 import type { ShoppingList, ShoppingListItem } from '@shared/shoppingListTypes'
 
 export function ShoppingView() {
@@ -155,21 +153,61 @@ export function ShoppingView() {
     }
   }
 
-  const loadListItems = async (listId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from('shopping_list_items')
-        .select('*')
-        .eq('shopping_list_id', listId)
-        .order('order', { ascending: true })
-      
-      if (!error && data) {
-        setListItems(data as ShoppingListItem[])
-      }
-    } catch (error) {
-      console.error('Error loading list items:', error)
+const loadListItems = useCallback(async (listId: string) => {
+  try {
+    console.log('📥 Loading items for list:', listId)
+    const { data, error } = await supabase
+      .from('shopping_list_items')
+      .select('*')
+      .eq('shopping_list_id', listId)
+      .order('created_at', { ascending: true })
+    
+    if (!error && data) {
+      console.log('✅ Loaded', data.length, 'items')
+      console.log('📋 Items data:', data)  // ← LÄGG TILL DENNA
+      setListItems(data as ShoppingListItem[])
     }
+  } catch (error) {
+    console.error('Error loading list items:', error)
   }
+}, [])
+
+// LÄGG TILL DETTA USEEFFECT FÖR ATT SE STATE:
+useEffect(() => {
+  console.log('🔄 listItems state updated:', {
+    count: listItems.length,
+    items: listItems.map(i => i.ingredient_name)
+  })
+}, [listItems])
+
+  useEffect(() => {
+    if (!selectedList) return
+
+    console.log('📡 Setting up realtime subscription for list:', selectedList.id)
+
+    const channel = supabase
+      .channel(`shopping_list_items:${selectedList.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'shopping_list_items',
+          filter: `shopping_list_id=eq.${selectedList.id}`
+        },
+        (payload) => {
+          console.log('🔔 Shopping list items changed!', payload)
+          // Reload items
+          loadListItems(selectedList.id)
+        }
+      )
+      .subscribe()
+
+    return () => {
+      console.log('📡 Cleaning up realtime subscription')
+      supabase.removeChannel(channel)
+    }
+  }, [selectedList?.id])
 
   const handleCheckItem = async (itemId: string, checked: boolean) => {
     try {
@@ -289,14 +327,12 @@ export function ShoppingView() {
     }
     
     console.log('🎯 handleCreatorComplete called with:', generatedLists)
-    
+
     try {
-      console.log('📝 Generated lists from wizard:', generatedLists)
-      
       for (const list of generatedLists) {
         console.log('➕ Creating list:', list.name)
         
-        // Insert shopping list
+        // 1. Create shopping list (empty items array in JSONB)
         const { data: listData, error: listError } = await supabase
           .from('shopping_lists')
           .insert({
@@ -307,83 +343,38 @@ export function ShoppingView() {
             status: list.status || 'active',
             split_mode: list.split_mode || 'single',
             warnings: list.warnings || [],
-            items: [] // Initialize empty items array
+            items: []  // ← Keep empty, items go in separate table!
           })
           .select()
           .single()
-        
-        if (listError) {
-          console.error('❌ Error creating shopping list:', listError)
-          alert(`Fel vid skapande av lista: ${listError.message}`)
+
+        if (listError || !listData) {
+          console.error('❌ Failed to create list:', listError)
           continue
         }
-        
+
         console.log('✅ Created shopping list:', listData)
-        
-        // Now generate and insert items
-        if (listData && listData.id) {
-          console.log('📦 Creating items for list:', listData.id)
-          await createListItems(listData.id, list.date_range_start, list.date_range_end)
-          console.log('✅ Items created successfully')
+
+        // 2. Use database function to generate items with proper aggregation
+        // This handles canonical matching, unit conversion, and "efter smak" grouping
+        const { data: regenerateResult, error: regenerateError } = await supabase
+          .rpc('regenerate_shopping_list', { target_list_id: listData.id })
+
+        if (regenerateError) {
+          console.error('❌ Error generating items:', regenerateError)
+        } else {
+          console.log('✅ Items generated:', regenerateResult)
         }
       }
-      
+
+      // 5. Reload
       console.log('🔄 Reloading shopping lists...')
       await loadShoppingLists()
-      console.log('✅ Lists reloaded')
+      console.log('✅ Done!')
       
-      alert(`${generatedLists.length} inköpslista${generatedLists.length !== 1 ? 'or' : ''} skapad med alla varor!`)
+      setIsCreatorOpen(false)
     } catch (error) {
-      console.error('❌ Error saving shopping lists:', error)
-      alert('Kunde inte spara inköpslistor: ' + (error as Error).message)
-    }
-  }
-
-  const createListItems = async (listId: string, dateFrom: string, dateTo: string) => {
-    try {
-      // Generate ingredients for this date range
-      const ingredients = ShoppingListGenerator.aggregateIngredients(
-        mealPlans,
-        recipes,
-        dateFrom,
-        dateTo
-      )
-      
-      console.log('Aggregated ingredients:', ingredients)
-      
-      // Convert to shopping list items
-      const items = ingredients.map((ing, index) => ({
-        shopping_list_id: listId,
-        ingredient_name: ing.name,
-        quantity: ing.totalQuantity,
-        unit: ing.unit,
-        category: ing.category,
-        checked: false,
-        used_in_recipes: ing.usedInRecipes.map(r => r.recipeId),
-        used_on_dates: ing.usedOnDates,
-        freshness_warning: false, // Will be calculated
-        freshness_status: 'ok' as const,
-        order: index
-      }))
-      
-      console.log('Items to insert:', items)
-      
-      if (items.length > 0) {
-        const { data, error } = await supabase
-          .from('shopping_list_items')
-          .insert(items)
-          .select()
-        
-        if (error) {
-          console.error('Error inserting items:', error)
-          throw error
-        }
-        
-        console.log('Inserted items:', data)
-      }
-    } catch (error) {
-      console.error('Error creating list items:', error)
-      throw error
+      console.error('❌ Error:', error)
     }
   }
 
@@ -417,90 +408,52 @@ export function ShoppingView() {
   
   const regenerateList = async (keepPurchased: boolean) => {
     if (!selectedList || !user) return
-    
+
     try {
-      // Use static method
-      const dateFrom = format(new Date(selectedList.date_range_start), 'yyyy-MM-dd')
-      const dateTo = format(new Date(selectedList.date_range_end), 'yyyy-MM-dd')
-      
-      const aggregated = ShoppingListGenerator.aggregateIngredients(
-        mealPlans,
-        recipes,
-        dateFrom,
-        dateTo
-      )
-      
-      // Get freshness status for each item
-      const getFreshnessStatus = (ingredient: any, startDate: string) => {
-        const categoryInfo = getCategoryInfo(ingredient.category)
-        if (!categoryInfo) return { status: 'ok' as const, warning: false }
-        
-        const earliestUse = ingredient.usedOnDates.sort()[0]
-        const daysUntilUse = differenceInDays(parseISO(earliestUse), parseISO(startDate))
-        
-        if (daysUntilUse > categoryInfo.shelfLife) {
-          if (categoryInfo.freezable) {
-            return { 
-              status: 'freeze' as const, 
-              warning: true
-            }
-          }
-          return { 
-            status: 'buy_later' as const, 
-            warning: true
-          }
-        }
-        
-        return { status: 'ok' as const, warning: false }
+      // Save checked items if keepPurchased is true
+      const checkedIngredients = keepPurchased
+        ? listItems.filter(item => item.checked).map(item => item.ingredient_name.toLowerCase())
+        : []
+
+      // Use database function for proper aggregation with canonical matching
+      const { data, error } = await supabase
+        .rpc('regenerate_shopping_list', { target_list_id: selectedList.id })
+
+      if (error) {
+        throw error
       }
-      
-      const newItems: ShoppingListItem[] = aggregated.map((item, index) => {
-        const freshness = getFreshnessStatus(item, dateFrom)
-        return {
-          id: crypto.randomUUID(),
-          shopping_list_id: selectedList.id,
-          ingredient_name: item.name,
-          quantity: item.totalQuantity,
-          unit: item.unit,
-          category: item.category,
-          checked: false,
-          order: index,
-          used_in_recipes: item.usedInRecipes.map((r: any) => r.recipeId),
-          used_on_dates: item.usedOnDates,
-          freshness_status: freshness.status,
-          freshness_warning: freshness.warning
+
+      console.log('✅ List regenerated:', data)
+
+      // Restore checked status for previously purchased items
+      if (keepPurchased && checkedIngredients.length > 0) {
+        // Get the new items
+        const { data: newItems } = await supabase
+          .from('shopping_list_items')
+          .select('id, ingredient_name')
+          .eq('shopping_list_id', selectedList.id)
+
+        if (newItems) {
+          // Find items that were previously checked
+          const itemsToCheck = newItems.filter(item =>
+            checkedIngredients.includes(item.ingredient_name.toLowerCase())
+          )
+
+          // Mark them as checked
+          if (itemsToCheck.length > 0) {
+            await supabase
+              .from('shopping_list_items')
+              .update({ checked: true })
+              .in('id', itemsToCheck.map(i => i.id))
+          }
         }
-      })
-      
-      const mergedItems = keepPurchased
-        ? ShoppingListSyncManager.mergeChanges(listItems, newItems, true)
-        : newItems
-      
-      await supabase
-        .from('shopping_list_items')
-        .delete()
-        .eq('shopping_list_id', selectedList.id)
-      
-      const itemsToInsert = mergedItems.map((item: ShoppingListItem, index: number) => ({
-        shopping_list_id: selectedList.id,
-        ingredient_name: item.ingredient_name,
-        quantity: item.quantity,
-        unit: item.unit,
-        category: item.category,
-        checked: item.checked || false,
-        order: index,
-        used_in_recipes: item.used_in_recipes,
-        freshness_status: item.freshness_status,
-        freshness_warning: item.freshness_warning
-      }))
-      
-      await supabase.from('shopping_list_items').insert(itemsToInsert)
-      
+      }
+
       await loadListItems(selectedList.id)
       setNeedsSync(false)
       setSyncConflicts(null)
-      
-      alert(keepPurchased 
+
+      alert(keepPurchased
         ? '✅ Listan synkad! Inhandlade varor är bevarade.'
         : '✅ Listan regenererad från planeringen!'
       )
