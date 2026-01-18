@@ -1,15 +1,61 @@
 // Core domain types for MatPlanner
 
+// User roles
+export type UserRole = 'guest' | 'user' | 'premium' | 'admin';
+export type SubscriptionStatus = 'none' | 'trial' | 'active' | 'cancelled' | 'expired';
+export type AuthProvider = 'google' | 'facebook' | 'apple' | 'email';
+
 export interface User {
   id: string;
   email: string;
   name?: string;
-  auth_provider: 'google' | 'facebook' | 'email';
+  avatar_url?: string;
+  auth_provider: AuthProvider;
+  provider_data?: Record<string, unknown>;
+
+  // Role & Subscription
+  role: UserRole;
+  role_updated_at?: Date;
+  subscription_status: SubscriptionStatus;
+  subscription_expires_at?: Date;
+
+  // Onboarding
+  onboarding_completed: boolean;
+  onboarding_step: number;
+
+  // Profile
   household_size: number;
   dietary_preferences: string[];
   allergies: string[];
+  preferences?: Record<string, unknown>;
+
+  // Timestamps
   created_at: Date;
   updated_at: Date;
+}
+
+// Helper functions for role checking
+export function isAdmin(user: User | null): boolean {
+  return user?.role === 'admin';
+}
+
+export function isPremium(user: User | null): boolean {
+  return user?.role === 'premium' || user?.role === 'admin';
+}
+
+export function canAccessFeature(user: User | null, feature: 'household' | 'ai_planning' | 'unlimited_recipes' | 'admin_panel'): boolean {
+  if (!user) return false;
+
+  switch (feature) {
+    case 'admin_panel':
+      return user.role === 'admin';
+    case 'household':
+    case 'ai_planning':
+    case 'unlimited_recipes':
+      return user.role === 'premium' || user.role === 'admin';
+    default:
+      return true;
+  }
 }
 
 // Legacy JSONB ingredient format (deprecated - kept for migration compatibility)

@@ -2,6 +2,10 @@ import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { supabase } from '../../lib/supabase'
 import { useStore } from '../../store/useStore'
+import { useAuth, useDebug } from '../../contexts'
+import type { DebugSettings } from '../../contexts'
+
+type AdminTab = 'extraction' | 'debug' | 'users'
 
 interface SiteExtractionRule {
   id: string
@@ -47,6 +51,10 @@ const STATUS_LABELS = {
 
 export function AdminView() {
   const { setCurrentView } = useStore()
+  const { user } = useAuth()
+  const { settings, isDebugAvailable, updateSetting, resetToDefaults, toggleAllOff } = useDebug()
+
+  const [activeTab, setActiveTab] = useState<AdminTab>('extraction')
   const [rules, setRules] = useState<SiteExtractionRule[]>([])
   const [feedbackSummary, setFeedbackSummary] = useState<FeedbackSummary[]>([])
   const [loading, setLoading] = useState(true)
@@ -55,8 +63,10 @@ export function AdminView() {
   const [actionLoading, setActionLoading] = useState(false)
 
   useEffect(() => {
-    loadData()
-  }, [])
+    if (activeTab === 'extraction') {
+      loadData()
+    }
+  }, [activeTab])
 
   const loadData = async () => {
     setLoading(true)
@@ -190,19 +200,173 @@ export function AdminView() {
           >
             ← Tillbaka till inställningar
           </button>
-          <h2 className="text-3xl font-bold">Admin: Extraktionsregler</h2>
+          <h2 className="text-3xl font-bold">Admin-panel</h2>
           <p className="text-text-secondary">
-            Hantera AI-genererade regler för receptimport per domän
+            {user?.email} ({user?.role})
           </p>
         </div>
+      </div>
+
+      {/* Tab Navigation */}
+      <div className="flex gap-2 mb-6 border-b border-gray-200">
         <button
-          onClick={loadData}
-          disabled={loading}
-          className="px-4 py-2 bg-secondary text-white rounded-lg hover:bg-secondary-dark disabled:opacity-50"
+          onClick={() => setActiveTab('extraction')}
+          className={`px-4 py-2 font-medium border-b-2 transition-colors ${
+            activeTab === 'extraction'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-text-secondary hover:text-text'
+          }`}
         >
-          Uppdatera
+          Extraktionsregler
+        </button>
+        <button
+          onClick={() => setActiveTab('debug')}
+          className={`px-4 py-2 font-medium border-b-2 transition-colors ${
+            activeTab === 'debug'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-text-secondary hover:text-text'
+          }`}
+        >
+          Debug & Utveckling
+        </button>
+        <button
+          onClick={() => setActiveTab('users')}
+          className={`px-4 py-2 font-medium border-b-2 transition-colors ${
+            activeTab === 'users'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-text-secondary hover:text-text'
+          }`}
+        >
+          Användare
         </button>
       </div>
+
+      {/* Debug Tab Content */}
+      {activeTab === 'debug' && (
+        <div className="space-y-6">
+          {!isDebugAvailable ? (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-center">
+              <p className="text-amber-800">
+                Debug-läge är endast tillgängligt i utvecklingsmiljö för administratörer.
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* Debug Status */}
+              <div className="bg-surface rounded-xl p-6 border border-gray-200">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-xl font-bold">Debug-inställningar</h3>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={resetToDefaults}
+                      className="px-3 py-1 text-sm border border-gray-300 rounded-lg hover:bg-gray-50"
+                    >
+                      Återställ
+                    </button>
+                    <button
+                      onClick={toggleAllOff}
+                      className="px-3 py-1 text-sm border border-red-300 text-red-600 rounded-lg hover:bg-red-50"
+                    >
+                      Stäng av alla
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  {/* Logging */}
+                  <DebugToggle
+                    label="Console-loggning"
+                    description="Visa console.log meddelanden"
+                    enabled={settings.enableConsoleLog}
+                    onChange={(v) => updateSetting('enableConsoleLog', v)}
+                  />
+                  <DebugToggle
+                    label="Prestandaloggning"
+                    description="Visa timing och prestanda-data"
+                    enabled={settings.enablePerformanceLog}
+                    onChange={(v) => updateSetting('enablePerformanceLog', v)}
+                  />
+                  <DebugToggle
+                    label="API-anrop loggning"
+                    description="Logga alla Supabase API-anrop"
+                    enabled={settings.logApiCalls}
+                    onChange={(v) => updateSetting('logApiCalls', v)}
+                  />
+
+                  {/* Mock Data */}
+                  <DebugToggle
+                    label="Mock AI-svar"
+                    description="Använd förinställda AI-svar istället för riktiga API-anrop"
+                    enabled={settings.useMockAI}
+                    onChange={(v) => updateSetting('useMockAI', v)}
+                    highlight
+                  />
+                  <DebugToggle
+                    label="Mock-recept"
+                    description="Använd testrecept"
+                    enabled={settings.useMockRecipes}
+                    onChange={(v) => updateSetting('useMockRecipes', v)}
+                  />
+
+                  {/* UI Debug */}
+                  <DebugToggle
+                    label="Komponentgränser"
+                    description="Visa visuella gränser för komponenter"
+                    enabled={settings.showComponentBorders}
+                    onChange={(v) => updateSetting('showComponentBorders', v)}
+                  />
+                  <DebugToggle
+                    label="Render-räknare"
+                    description="Visa antal omrenderingar"
+                    enabled={settings.showRenderCounts}
+                    onChange={(v) => updateSetting('showRenderCounts', v)}
+                  />
+
+                  {/* Features */}
+                  <DebugToggle
+                    label="Experimentella funktioner"
+                    description="Aktivera funktioner under utveckling"
+                    enabled={settings.enableExperimentalFeatures}
+                    onChange={(v) => updateSetting('enableExperimentalFeatures', v)}
+                  />
+                </div>
+              </div>
+
+              {/* Current Settings JSON */}
+              <div className="bg-surface rounded-xl p-6 border border-gray-200">
+                <h3 className="text-lg font-bold mb-3">Aktuella inställningar (JSON)</h3>
+                <pre className="text-xs bg-gray-100 rounded-lg p-4 overflow-auto">
+                  {JSON.stringify(settings, null, 2)}
+                </pre>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Users Tab Content */}
+      {activeTab === 'users' && (
+        <div className="bg-surface rounded-xl p-6 border border-gray-200">
+          <h3 className="text-xl font-bold mb-4">Användarhantering</h3>
+          <p className="text-text-secondary">
+            Kommer snart: Lista användare, ändra roller, hantera prenumerationer.
+          </p>
+        </div>
+      )}
+
+      {/* Extraction Rules Tab Content */}
+      {activeTab === 'extraction' && (
+        <>
+          {/* Refresh button for extraction tab */}
+          <div className="flex justify-end mb-4">
+            <button
+              onClick={loadData}
+              disabled={loading}
+              className="px-4 py-2 bg-secondary text-white rounded-lg hover:bg-secondary-dark disabled:opacity-50"
+            >
+              Uppdatera
+            </button>
+          </div>
 
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
@@ -415,6 +579,52 @@ export function AdminView() {
             </div>
           )}
         </div>
+      </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// Debug Toggle Component
+function DebugToggle({
+  label,
+  description,
+  enabled,
+  onChange,
+  highlight = false,
+}: {
+  label: string
+  description: string
+  enabled: boolean
+  onChange: (value: boolean) => void
+  highlight?: boolean
+}) {
+  return (
+    <div
+      className={`p-4 rounded-lg border transition-colors ${
+        highlight && enabled
+          ? 'bg-amber-50 border-amber-200'
+          : 'bg-white border-gray-200'
+      }`}
+    >
+      <div className="flex items-center justify-between">
+        <div>
+          <h4 className="font-medium">{label}</h4>
+          <p className="text-xs text-text-secondary">{description}</p>
+        </div>
+        <button
+          onClick={() => onChange(!enabled)}
+          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+            enabled ? 'bg-primary' : 'bg-gray-300'
+          }`}
+        >
+          <span
+            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+              enabled ? 'translate-x-6' : 'translate-x-1'
+            }`}
+          />
+        </button>
       </div>
     </div>
   )

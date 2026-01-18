@@ -183,8 +183,11 @@ export function QuickPresets({
     }
     
     setIsGenerating(false)
+
+    // Call onGenerate - the parent component will handle closing
+    // IMPORTANT: Don't call onClose() here! The parent needs selectedDateRange
+    // to remain set for PopulateChoiceModal to work correctly
     onGenerate(selectedRecipes)
-    onClose()
   }
 
   return (
@@ -236,7 +239,7 @@ export function QuickPresets({
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   {PRESETS.map((preset) => {
                     const availableCount = recipes.filter(r => preset.filter(r, userPreferences)).length
-                    const isEnough = availableCount >= 7
+                    const isEnough = availableCount >= daysToGenerate
 
                     return (
                       <motion.button
@@ -259,9 +262,9 @@ export function QuickPresets({
                         <div className={`text-xs font-semibold ${
                           isEnough ? 'text-primary' : 'text-red-500'
                         }`}>
-                          {isEnough 
+                          {isEnough
                             ? `${availableCount} recept tillgängliga`
-                            : `Endast ${availableCount} recept (behöver 7)`
+                            : `Endast ${availableCount} recept (behöver ${daysToGenerate})`
                           }
                         </div>
                       </motion.button>

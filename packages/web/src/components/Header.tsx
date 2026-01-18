@@ -1,31 +1,59 @@
-import { useState } from 'react'
-import { useStore } from '../store/useStore'
+import { useState, useEffect } from 'react'
+import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 
 export function Header() {
-  const { user } = useStore()
+  const { user } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [isLogin, setIsLogin] = useState(true)
   const [showAuthForm, setShowAuthForm] = useState(false)
   const [message, setMessage] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  // Close the form when user becomes authenticated
+  useEffect(() => {
+    if (user && showAuthForm) {
+      console.log('[Header] User authenticated, closing form')
+      setShowAuthForm(false)
+      setEmail('')
+      setPassword('')
+      setIsSubmitting(false)
+    }
+  }, [user, showAuthForm])
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault()
     setMessage('')
+    setIsSubmitting(true)
 
     if (isLogin) {
-      // Login
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      })
-      if (error) {
-        setMessage(error.message)
-      } else {
-        setShowAuthForm(false)
-        setEmail('')
-        setPassword('')
+      // Login with timeout
+      console.log('[Header] Attempting login for:', email)
+      try {
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error('Login timeout - men inloggningen lyckades! Ladda om sidan.')), 5000)
+        })
+
+        const authPromise = supabase.auth.signInWithPassword({
+          email,
+          password,
+        })
+
+        const { error } = await Promise.race([authPromise, timeoutPromise])
+
+        console.log('[Header] Login result:', { error: error?.message })
+        if (error) {
+          console.log('[Header] Login error:', error.message)
+          setMessage(error.message)
+          setIsSubmitting(false)
+        }
+        // Form will close via the useEffect when user becomes authenticated
+      } catch (err) {
+        // Timeout occurred but login might still have worked
+        console.log('[Header] Login timeout, but auth event may have fired')
+        setMessage((err as Error).message)
+        setIsSubmitting(false)
       }
     } else {
       // Signup
@@ -132,9 +160,10 @@ export function Header() {
                       
                       <button
                         type="submit"
-                        className="w-full px-4 py-2 bg-primary text-white rounded-lg font-semibold hover:bg-primary-dark"
+                        disabled={isSubmitting}
+                        className="w-full px-4 py-2 bg-primary text-white rounded-lg font-semibold hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        {isLogin ? 'Logga in' : 'Skapa konto'}
+                        {isSubmitting ? 'Laddar...' : (isLogin ? 'Logga in' : 'Skapa konto')}
                       </button>
                       
                       <button

@@ -185,19 +185,24 @@ export function PlanningView() {
       const originalPlan = mealPlans.find(p => p.id === planId)
       if (!originalPlan) return
 
-      // Create a copy on the new date
+      // Create a copy on the new date (use UPSERT to handle existing meals)
       const { data, error } = await supabase
         .from('meal_plans')
-        .insert({
+        .upsert({
           user_id: user.id,
           recipe_id: originalPlan.recipe_id,
           date: newDate
-        })
+        }, { onConflict: 'user_id,date' })
         .select()
         .single()
 
       if (error) throw error
       if (data) {
+        // Remove existing meal plan from local state if it exists
+        const existingPlan = mealPlans.find(mp => mp.date === newDate && mp.user_id === user.id)
+        if (existingPlan) {
+          removeMealPlan(existingPlan.id)
+        }
         addMealPlan(data)
       }
     } catch (error) {
@@ -235,6 +240,7 @@ export function PlanningView() {
     if (rangeExistingMeals.length > 0) {
       // Has existing meals - ask user what to do
       setPendingPresetRecipes(selectedRecipes)
+      setIsPresetsOpen(false)  // Close QuickPresets before showing choice modal
       setIsPopulateChoiceOpen(true)
     } else {
       // Empty range - just add all
@@ -381,14 +387,20 @@ export function PlanningView() {
           date: date,
         }
 
+        // Use UPSERT to handle existing meal plans (A1 fix)
         const { data, error } = await supabase
           .from('meal_plans')
-          .insert([newMealPlan])
+          .upsert([newMealPlan], { onConflict: 'user_id,date' })
           .select()
           .single()
 
         if (error) throw error
         if (data) {
+          // Remove existing meal plan from local state if it exists
+          const existingPlan = mealPlans.find(mp => mp.date === date && mp.user_id === user.id)
+          if (existingPlan) {
+            removeMealPlan(existingPlan.id)
+          }
           addMealPlan(data)
         }
       }
