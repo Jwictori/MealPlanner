@@ -31,8 +31,8 @@ type Step = 'date_range' | 'analysis' | 'strategy' | 'generating'
 export function ShoppingListCreatorWizard({
   isOpen,
   onClose,
-  mealPlans,
-  recipes,
+  mealPlans: _mealPlans, // Reserved for future client-side preview
+  recipes: _recipes,     // Reserved for future client-side preview
   userId,
   onComplete
 }: ShoppingListCreatorWizardProps) {

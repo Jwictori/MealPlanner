@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useStore } from '../../store/useStore'
 import { supabase } from '../../lib/supabase'
+import { useShoppingList } from '../../hooks/useShoppingList'
 import { WeekCalendar } from '../WeekCalendar'
 import { MonthCalendarView } from '../MonthCalendarView'
 import { SelectRecipeModal } from '../SelectRecipeModal'
@@ -20,6 +21,15 @@ type PlannerType = 'preset' | 'ai' | null
 
 export function PlanningView() {
   const { user, recipes, mealPlans, setMealPlans, addMealPlan, removeMealPlan } = useStore()
+
+  // Use the shopping list hook for creating lists
+  const { createShoppingLists } = useShoppingList({
+    userId: user?.id,
+    mealPlans,
+    recipes,
+    autoLoad: false, // Don't auto-load in PlanningView
+  })
+
   const [viewMode, setViewMode] = useState<ViewMode>('week')
   const [currentDate, setCurrentDate] = useState(new Date())
   const [isSelectModalOpen, setIsSelectModalOpen] = useState(false)
@@ -700,111 +710,24 @@ export function PlanningView() {
         mealPlans={mealPlans}
         recipes={recipes}
         userId={user.id}
-
-        // PlanningView.tsx - onComplete handler för ShoppingListCreatorWizard
-        // Ersätt hela onComplete prop med detta:
-
         onComplete={async (lists) => {
-          console.log('✅ Shopping lists created from wizard:', lists)
-          
-          try {
-            for (const list of lists) {
-              console.log('➕ Creating list:', list.name)
-              
-              // 1. Get meal plans in date range with recipes and their ingredients
-              const { data: mealPlansInRange, error: mealPlansError } = await supabase
-                .from('meal_plans')
-                .select(`
-                  id,
-                  date,
-                  recipe_id,
-                  recipes (
-                    id,
-                    name,
-                    recipe_ingredients (*)
-                  )
-                `)
-                .eq('user_id', user.id)
-                .gte('date', list.date_range_start)
-                .lte('date', list.date_range_end)
+          console.log('[PlanningView] Creating shopping lists:', lists.length)
 
-              if (mealPlansError) {
-                console.error('❌ Failed to fetch meal plans:', mealPlansError)
-                continue
-              }
+          const success = await createShoppingLists(
+            lists.map(list => ({
+              name: list.name,
+              date_range_start: list.date_range_start,
+              date_range_end: list.date_range_end,
+              status: list.status || 'active',
+              split_mode: list.split_mode || 'single',
+              warnings: list.warnings || [],
+            }))
+          )
 
-              console.log(`📦 Found ${mealPlansInRange?.length || 0} meal plans`)
-
-              // 2. Aggregate ingredients from recipe_ingredients table
-              const itemsMap = new Map()
-
-              for (const mp of mealPlansInRange || []) {
-                // Handle recipe - could be object or array
-                const recipe = Array.isArray(mp.recipes) ? mp.recipes[0] : mp.recipes
-                if (!recipe) continue
-
-                // Get ingredients from recipe_ingredients (new relational format)
-                const ingredients = recipe.recipe_ingredients || []
-                if (ingredients.length === 0) continue
-
-                for (const ing of ingredients) {
-                  const key = `${ing.ingredient_name}_${ing.unit}`
-
-                  if (itemsMap.has(key)) {
-                    const existing = itemsMap.get(key)
-                    existing.quantity += ing.quantity || 0
-                    existing.used_on_dates.push(mp.date)
-                  } else {
-                    itemsMap.set(key, {
-                      id: crypto.randomUUID(),
-                      ingredient_name: ing.ingredient_name,
-                      quantity: ing.quantity || 0,
-                      unit: ing.unit,
-                      category: 'other',
-                      checked: false,
-                      recipe_id: mp.recipe_id,
-                      used_on_dates: [mp.date],
-                      order: itemsMap.size
-                    })
-                  }
-                }
-              }
-
-              const items = Array.from(itemsMap.values())
-              console.log(`📝 Aggregated ${items.length} unique items`)
-
-              // 3. Create shopping list WITH items
-              const { data: listData, error: listError } = await supabase
-                .from('shopping_lists')
-                .insert({
-                  user_id: list.user_id,
-                  name: list.name,
-                  date_range_start: list.date_range_start,
-                  date_range_end: list.date_range_end,
-                  status: list.status || 'active',
-                  split_mode: list.split_mode || 'single',
-                  warnings: list.warnings || [],
-                  items: items  // ← Items included directly!
-                })
-                .select()
-                .single()
-
-              if (listError || !listData) {
-                console.error('❌ Failed to create list:', listError)
-                continue
-              }
-
-              console.log('✅ Created list with', items.length, 'items')
-            }
-
-            // 4. Close wizard
+          if (success) {
             setIsShoppingListOpen(false)
-            
-            // 5. Show success message
-            alert(`✅ Inköpslista skapad! Gå till Inköp-fliken för att se den.`)
-            
-          } catch (error) {
-            console.error('❌ Error creating shopping lists:', error)
+            alert('✅ Inköpslista skapad! Gå till Inköp-fliken för att se den.')
+          } else {
             alert('❌ Kunde inte skapa inköpslista. Försök igen.')
           }
         }}
